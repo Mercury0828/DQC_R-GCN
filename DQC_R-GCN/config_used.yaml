@@ -1,0 +1,119 @@
+imitation_learning:
+  bc_epochs_per_update: 5
+  bc_l2_regularization: 0.001
+  bc_pretrain_batch_size: 64
+  bc_pretrain_epochs: 200
+  bc_pretrain_lr: 1e-3
+  bc_update_frequency: 3
+  expert_buffer_size: 15000
+  expert_decay:
+    stages:
+    - prob: 0.8
+      steps: 5000
+    - prob: 0.6
+      steps: 10000
+    - prob: 0.4
+      steps: 15000
+    - prob: 0.3
+      steps: 20000
+    - prob: 0.2
+      steps: 25000
+    type: staged
+  final_expert_prob: 0.2
+  initial_expert_prob: 0.8
+  min_bc_loss_threshold: 1.5
+  num_expert_episodes: 50
+  reward_weights:
+    r_colocate: 1.0
+    r_completion: 20.0
+    r_expert_match: 5.0
+    r_intermediate_completion: 5.0
+    r_parallel_epr: 1.0
+    r_separate: 0.5
+    r_step: 0.001
+    r_time: 2.0
+    w_alloc: 1.0
+    w_expert: 2.0
+    w_progress: 0.001
+    w_schedule: 1.0
+model:
+  dropout: 0.1
+  hidden_dim: 128
+  num_bases: 8
+  num_heads: 4
+  num_layers: 3
+paths:
+  checkpoint_dir: checkpoints/
+  config_backup: config_used.yaml
+  expert_data: expert_demonstrations.pkl
+  log_dir: logs/
+  model_save: phase2_model_optimized.pt
+  tensorboard_dir: tensorboard/
+ppo:
+  clip_epsilon: 0.2
+  entropy_coef: 0.01
+  gae_lambda: 0.95
+  gamma: 0.99
+  learning_rate: 5e-5
+  max_grad_norm: 0.5
+  minibatch_size: 64
+  num_epochs: 10
+  rollout_length: 512
+  value_coef: 0.5
+problem:
+  debug:
+    num_gates: 10
+    num_qpus: 2
+    num_qubits: 8
+    qpu_capacity: 4
+    time_horizon: 20
+  medium:
+    num_gates: 50
+    num_qpus: 3
+    num_qubits: 20
+    qpu_capacity: 10
+    time_horizon: 50
+  small:
+    num_gates: 20
+    num_qpus: 3
+    num_qubits: 12
+    qpu_capacity: 5
+    time_horizon: 30
+training:
+  best_model:
+    enabled: true
+    metric: avg_reward
+    save_path: best_model.pt
+  early_stop:
+    enabled: true
+    metric: avg_reward
+    min_delta: 0.01
+    patience: 100
+  enable_profiling: false
+  enable_tensorboard: true
+  enable_wandb: false
+  eval_episodes: 5
+  log_frequency: 5
+  phase1_bc_only: true
+  phase1_early_stop_patience: 20
+  phase1_epochs: 200
+  phase1_min_expert_prob: 0.5
+  phase2_adaptive_expert: true
+  phase2_performance_threshold: 0.8
+  phase2_timesteps: 30000
+  phase3_min_expert_prob: 0.1
+  phase3_performance_safeguard: true
+  phase3_timesteps: 20000
+  save_frequency: 50
+  total_timesteps: 50000
+  verbose: true
+  visualization:
+    enabled: true
+    metrics:
+    - avg_reward
+    - completion_rate
+    - expert_match_rate
+    - bc_loss
+    plot_dir: plots/
+    save_plots: true
+    update_frequency: 10
