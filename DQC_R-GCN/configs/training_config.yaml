@@ -1,0 +1,161 @@
+# Optimized training configuration based on experimental results
+# Key changes: stronger BC, slower expert decay, better rewards
+
+# Problem configuration
+problem:
+  debug:
+    num_gates: 10
+    num_qpus: 2
+    num_qubits: 8
+    qpu_capacity: 4
+    time_horizon: 20
+  small:
+    num_gates: 20
+    num_qpus: 3
+    num_qubits: 12
+    qpu_capacity: 5
+    time_horizon: 30
+  medium:
+    num_gates: 50
+    num_qpus: 3
+    num_qubits: 20
+    qpu_capacity: 10
+    time_horizon: 50
+
+# Model configuration
+model:
+  hidden_dim: 128
+  num_layers: 3
+  num_bases: 8
+  dropout: 0.1
+  num_heads: 4
+
+# PPO configuration
+ppo:
+  learning_rate: 5e-5  # Reduced for stability
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_epsilon: 0.2
+  value_coef: 0.5
+  entropy_coef: 0.01
+  max_grad_norm: 0.5
+  rollout_length: 512
+  minibatch_size: 64
+  num_epochs: 10
+
+# Imitation learning configuration (HEAVILY OPTIMIZED)
+imitation_learning:
+  # BC pretraining - MUCH STRONGER
+  bc_pretrain_epochs: 200  # Increased from 50
+  bc_pretrain_batch_size: 64  # Increased from 32
+  bc_pretrain_lr: 1e-3  # Increased from 5e-4
+  bc_l2_regularization: 0.001  # Added L2 regularization
+  
+  # Expert demonstrations
+  num_expert_episodes: 50  # Increased from 30
+  expert_buffer_size: 15000  # Increased
+  
+  # Mixed training - SLOWER TRANSITION
+  initial_expert_prob: 0.8  # Increased from 0.5
+  final_expert_prob: 0.2  # Increased from 0.1
+  
+  # Expert decay strategy
+  expert_decay:
+    type: "staged"  # Changed from linear
+    stages:
+      - steps: 5000
+        prob: 0.8
+      - steps: 10000
+        prob: 0.6
+      - steps: 15000
+        prob: 0.4
+      - steps: 20000
+        prob: 0.3
+      - steps: 25000
+        prob: 0.2
+  
+  # BC during PPO
+  bc_epochs_per_update: 5  # Increased from 3
+  bc_update_frequency: 3  # More frequent (was 5)
+  min_bc_loss_threshold: 1.5  # Stop BC updates if loss is below this
+  
+  # Reward weights (OPTIMIZED)
+  reward_weights:
+    w_alloc: 1.0
+    w_schedule: 1.0
+    w_progress: 0.001  # Reduced from 0.005
+    w_expert: 2.0  # Increased from 1.0
+    r_expert_match: 5.0  # Increased from 2.0
+    r_completion: 20.0  # Increased from 10.0
+    r_colocate: 1.0  # Increased from 0.5
+    r_separate: 0.5  # Reduced from 1.0
+    r_time: 2.0  # Increased from 1.0
+    r_parallel_epr: 1.0  # Increased from 0.5
+    r_step: 0.001  # Reduced from 0.005
+    r_intermediate_completion: 5.0  # NEW: reward for partial completion
+
+# Training schedule
+training:
+  # Phase 1: Strong BC pretraining
+  phase1_bc_only: true
+  phase1_epochs: 200
+  phase1_early_stop_patience: 20  # Stop if no improvement
+  phase1_min_expert_prob: 0.5  # Minimum expert probability to achieve
+  
+  # Phase 2: Mixed training with staged decay
+  phase2_timesteps: 30000  # Increased from 25000
+  phase2_performance_threshold: 0.8  # Maintain this completion rate
+  phase2_adaptive_expert: true  # Increase expert prob if performance drops
+  
+  # Phase 3: Fine-tuning with safety net
+  phase3_timesteps: 20000  # Reduced from 25000
+  phase3_min_expert_prob: 0.1  # Never go below this
+  phase3_performance_safeguard: true  # Revert to phase2 if performance drops
+  
+  # Total timesteps
+  total_timesteps: 50000
+  
+  # Monitoring and logging
+  log_frequency: 5  # More frequent logging
+  save_frequency: 50  # More frequent checkpoints
+  eval_episodes: 5  # Number of evaluation episodes
+  
+  # Early stopping
+  early_stop:
+    enabled: true
+    patience: 100  # Updates without improvement
+    min_delta: 0.01  # Minimum improvement
+    metric: "avg_reward"  # Or "completion_rate"
+  
+  # Best model tracking
+  best_model:
+    enabled: true
+    metric: "avg_reward"
+    save_path: "best_model.pt"
+  
+  # Visualization
+  visualization:
+    enabled: true
+    update_frequency: 10
+    metrics:
+      - "avg_reward"
+      - "completion_rate"
+      - "expert_match_rate"
+      - "bc_loss"
+    save_plots: true
+    plot_dir: "plots/"
+  
+  # Logging
+  enable_wandb: false
+  enable_tensorboard: true
+  enable_profiling: false
+  verbose: true
+
+# File paths
+paths:
+  checkpoint_dir: "checkpoints/"
+  log_dir: "logs/"
+  tensorboard_dir: "tensorboard/"
+  expert_data: "expert_demonstrations.pkl"
+  model_save: "phase2_model_optimized.pt"
+  config_backup: "config_used.yaml"

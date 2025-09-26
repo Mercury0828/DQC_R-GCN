@@ -1,0 +1,5 @@
+Update 0: {'avg_reward': -14.69916987960477, 'avg_completion': 1.0, 'avg_match': 0.11429146847680527}
+Update 10: {'avg_reward': -50.71222845771464, 'avg_completion': 0.985, 'avg_match': 0.03960924805987517}
+Update 20: {'avg_reward': -59.72481934569281, 'avg_completion': 0.945, 'avg_match': 0.04227273833674662}
+Update 30: {'avg_reward': -53.903281040716706, 'avg_completion': 0.99, 'avg_match': 0.04797231212623711}
+Update 40: {'avg_reward': -63.95473989966666, 'avg_completion': 0.97, 'avg_match': 0.06897321354362992}
