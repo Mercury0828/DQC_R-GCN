@@ -1,5 +1,5 @@
 """
-Imitation learning trainer for UNIQ-RL.
+Imitation learning trainer for UNIQ-RL - Fixed version.
 Combines behavioral cloning with online RL.
 """
 
@@ -7,29 +7,53 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import numpy as np
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 from collections import deque
-import wandb
+import time
 
+# Try to import wandb but don't fail if not available
+try:
+    import wandb
+    WANDB_AVAILABLE = True
+except ImportError:
+    WANDB_AVAILABLE = False
+
+# Import expert policy
 from expert_policy.uniq_expert import UNIQExpertPolicy
 from rewards.enhanced_rewards import EnhancedRewardFunction
 
-class ImitationLearningTrainer:
+# Try to import performance monitor
+try:
+    from utils.performance_monitor import perf_monitor, profile
+    PERF_MONITOR_AVAILABLE = True
+except ImportError:
+    PERF_MONITOR_AVAILABLE = False
+    # Create dummy decorators
+    def profile(name=None):
+        def decorator(func):
+            return func
+        return decorator
+    
+    # Create dummy perf_monitor
+    class DummyPerfMonitor:
+        def timer(self, name):
+            from contextlib import nullcontext
+            return nullcontext()
+        def get_stats(self, name):
+            return {}
+        def print_summary(self, top_n=10):
+            pass
+        enabled = False
+    
+    perf_monitor = DummyPerfMonitor()
+
+class OptimizedImitationLearningTrainer:
     """
-    Trainer that combines imitation learning with PPO.
+    Optimized trainer with batched operations and performance monitoring.
     """
     
     def __init__(self, env, policy_net, value_net, ppo_algorithm, config: Dict):
-        """
-        Initialize imitation learning trainer.
-        
-        Args:
-            env: DQC environment
-            policy_net: Policy network
-            value_net: Value network
-            ppo_algorithm: PPO instance
-            config: Training configuration
-        """
+        """Initialize optimized imitation learning trainer."""
         self.env = env
         self.policy_net = policy_net
         self.value_net = value_net
@@ -47,7 +71,7 @@ class ImitationLearningTrainer:
         self.bc_epochs = config.get('bc_epochs', 10)
         self.bc_batch_size = config.get('bc_batch_size', 64)
         self.expert_buffer_size = config.get('expert_buffer_size', 10000)
-        self.expert_prob = config.get('expert_prob', 0.3)  # Probability of using expert action
+        self.expert_prob = config.get('expert_prob', 0.3)
         
         # Expert demonstration buffer
         self.expert_buffer = deque(maxlen=self.expert_buffer_size)
@@ -66,119 +90,237 @@ class ImitationLearningTrainer:
             'completion_rate': deque(maxlen=100)
         }
         
+        # Performance monitoring
+        self.enable_profiling = config.get('enable_profiling', False) and PERF_MONITOR_AVAILABLE
+        if self.enable_profiling:
+            perf_monitor.enabled = True
+        
         # Initialize wandb if configured
-        self.use_wandb = config.get('use_wandb', False)
+        self.use_wandb = config.get('use_wandb', False) and WANDB_AVAILABLE
         if self.use_wandb:
             wandb.init(
                 project="uniq-rl",
                 config=config,
-                name=config.get('run_name', 'imitation_learning')
+                name=config.get('run_name', 'imitation_learning_optimized')
             )
     
+    @profile("generate_expert_demonstrations")
     def generate_expert_demonstrations(self, num_episodes: int = 10):
-        """
-        Generate expert demonstrations for behavioral cloning.
-        
-        Args:
-            num_episodes: Number of expert episodes to generate
-        """
+        """Generate expert demonstrations with performance monitoring."""
         print(f"Generating {num_episodes} expert demonstrations...")
         
         for episode in range(num_episodes):
-            trajectory = self.expert.generate_expert_trajectory(self.env)
+            episode_start = time.time()
             
-            # Add to expert buffer
-            for transition in trajectory:
-                self.expert_buffer.append(transition)
+            with perf_monitor.timer(f"expert_episode_{episode}"):
+                trajectory = self._generate_single_expert_trajectory()
+                
+                # Preprocess and add to buffer
+                with perf_monitor.timer("preprocess_trajectory"):
+                    self._preprocess_and_store_trajectory(trajectory)
             
             # Calculate episode statistics
             total_reward = sum(t['reward'] for t in trajectory)
             completion = self.env._get_completion_rate()
             
+            # Get timing info safely
+            episode_time = time.time() - episode_start
+            
             print(f"  Episode {episode + 1}: Length={len(trajectory)}, "
-                  f"Reward={total_reward:.2f}, Completion={completion:.2%}")
+                  f"Reward={total_reward:.2f}, Completion={completion:.2%}, "
+                  f"Time={episode_time:.2f}s")
         
         print(f"Total expert transitions: {len(self.expert_buffer)}")
     
-    def behavioral_cloning_update(self):
-        """
-        Perform behavioral cloning update on expert demonstrations.
-        """
-        if len(self.expert_buffer) < self.bc_batch_size:
-            return
+    def _generate_single_expert_trajectory(self) -> List[Dict]:
+        """Generate a single expert trajectory."""
+        trajectory = []
+        state = self.env.reset()
+        max_steps = 1000
         
-        total_loss = 0
-        num_updates = 0
+        for step in range(max_steps):
+            state_repr = self.env.state.get_state_representation()
+            valid_actions = self.env.get_valid_actions()
+            
+            if not valid_actions['map'] and not valid_actions['schedule']:
+                break
+            
+            with perf_monitor.timer("expert_action_selection"):
+                expert_action = self.expert.get_expert_action(state_repr, valid_actions)
+            
+            next_state, reward, done, info = self.env.step(expert_action)
+            
+            trajectory.append({
+                'state': state_repr,
+                'action': expert_action,
+                'reward': reward,
+                'next_state': self.env.state.get_state_representation(),
+                'done': done,
+                'valid_actions': valid_actions
+            })
+            
+            if done:
+                break
+            
+            state = next_state
         
-        for epoch in range(self.bc_epochs):
-            # Sample batch from expert buffer
-            batch_indices = np.random.choice(
-                len(self.expert_buffer),
-                size=min(self.bc_batch_size, len(self.expert_buffer)),
-                replace=False
+        return trajectory
+    
+    def _preprocess_and_store_trajectory(self, trajectory: List[Dict]):
+        """Preprocess trajectory for efficient batch processing."""
+        for transition in trajectory:
+            # Pre-compute action encoding for faster BC
+            action_encoding = self._encode_action_for_bc(
+                transition['action'],
+                transition['valid_actions']
             )
             
-            batch_loss = 0
-            
-            for idx in batch_indices:
-                transition = self.expert_buffer[idx]
-                state = transition['state']
-                expert_action = transition['action']
-                valid_actions = transition['valid_actions']
-                
-                # Skip if no valid actions
-                if not valid_actions['map'] and not valid_actions['schedule']:
-                    continue
-                
-                # Get policy output
-                action_probs, _, action_info = self.policy_net.forward(state, valid_actions)
-                
-                # Find expert action in action list
-                expert_idx = None
-                for i, (act_type, act_params) in enumerate(action_info):
-                    if act_type == expert_action[0] and act_params == expert_action[1]:
-                        expert_idx = i
-                        break
-                
-                if expert_idx is not None:
-                    # Calculate cross-entropy loss
-                    if isinstance(action_probs, torch.Tensor):
-                        if action_probs.dim() == 0:
-                            action_probs = action_probs.unsqueeze(0)
-                        
-                        # Create target distribution (one-hot for expert action)
-                        target = torch.zeros_like(action_probs)
-                        target[expert_idx] = 1.0
-                        
-                        # Cross-entropy loss
-                        loss = -torch.sum(target * torch.log(action_probs + 1e-8))
-                        
-                        # Backward pass
-                        self.bc_optimizer.zero_grad()
-                        loss.backward()
-                        nn.utils.clip_grad_norm_(self.policy_net.parameters(), 0.5)
-                        self.bc_optimizer.step()
-                        
-                        batch_loss += loss.item()
-                        num_updates += 1
-            
-            if num_updates > 0:
-                total_loss += batch_loss / num_updates
+            if action_encoding is not None:
+                preprocessed = {
+                    'state': transition['state'],
+                    'action': transition['action'],
+                    'action_encoding': action_encoding,
+                    'valid_actions': transition['valid_actions'],
+                    'reward': transition['reward']
+                }
+                self.expert_buffer.append(preprocessed)
+    
+    def _encode_action_for_bc(self, action: Tuple, valid_actions: Dict) -> Optional[Dict]:
+        """Pre-encode action for behavioral cloning."""
+        # Create a mapping of all valid actions
+        all_actions = []
+        for q, u in valid_actions.get('map', []):
+            all_actions.append(('map', (q, u)))
+        for g, t in valid_actions.get('schedule', []):
+            all_actions.append(('schedule', (g, t)))
         
-        if num_updates > 0:
-            avg_loss = total_loss / self.bc_epochs
+        # Find index of expert action
+        for idx, (act_type, act_params) in enumerate(all_actions):
+            if act_type == action[0] and act_params == action[1]:
+                return {
+                    'index': idx,
+                    'total_actions': len(all_actions),
+                    'all_actions': all_actions
+                }
+        
+        return None
+    
+    @profile("behavioral_cloning_batch_update")
+    def behavioral_cloning_update(self):
+        """Optimized batch behavioral cloning update."""
+        if len(self.expert_buffer) < self.bc_batch_size:
+            return 0.0
+        
+        total_loss = 0
+        num_batches = 0
+        
+        for epoch in range(self.bc_epochs):
+            # Sample and batch process
+            with perf_monitor.timer("bc_batch_sampling"):
+                batch = self._sample_bc_batch(self.bc_batch_size)
+            
+            if batch is None:
+                continue
+            
+            with perf_monitor.timer("bc_forward_backward"):
+                # Batch forward pass
+                loss = self._compute_bc_loss_batch(batch)
+                
+                if loss is not None:
+                    # Backward pass
+                    self.bc_optimizer.zero_grad()
+                    loss.backward()
+                    nn.utils.clip_grad_norm_(self.policy_net.parameters(), 0.5)
+                    self.bc_optimizer.step()
+                    
+                    total_loss += loss.item()
+                    num_batches += 1
+        
+        if num_batches > 0:
+            avg_loss = total_loss / num_batches
             self.stats['bc_loss'].append(avg_loss)
             return avg_loss
         
         return 0.0
     
-    def collect_mixed_rollouts(self, n_steps: int):
-        """
-        Collect rollouts with mixture of learned and expert policy.
+    def _sample_bc_batch(self, batch_size: int) -> Optional[List[Dict]]:
+        """Sample a batch for BC training."""
+        if len(self.expert_buffer) < batch_size:
+            return None
         
-        Args:
-            n_steps: Number of steps to collect
-        """
+        # Random sampling
+        indices = np.random.choice(len(self.expert_buffer), batch_size, replace=False)
+        batch = [self.expert_buffer[i] for i in indices]
+        
+        # Filter valid transitions
+        valid_batch = []
+        for item in batch:
+            if item['action_encoding'] is not None:
+                valid_batch.append(item)
+        
+        return valid_batch if valid_batch else None
+    
+    def _compute_bc_loss_batch(self, batch: List[Dict]) -> Optional[torch.Tensor]:
+        """Compute BC loss for a batch of transitions."""
+        losses = []
+        
+        # Group by similar action spaces for more efficient processing
+        grouped = self._group_by_action_space(batch)
+        
+        for group in grouped:
+            if not group:
+                continue
+            
+            # Process group together
+            group_losses = self._process_bc_group(group)
+            losses.extend(group_losses)
+        
+        if losses:
+            return torch.mean(torch.stack(losses))
+        return None
+    
+    def _group_by_action_space(self, batch: List[Dict]) -> List[List[Dict]]:
+        """Group transitions by similar action space size for batch processing."""
+        groups = {}
+        for item in batch:
+            size = item['action_encoding']['total_actions']
+            if size not in groups:
+                groups[size] = []
+            groups[size].append(item)
+        return list(groups.values())
+    
+    def _process_bc_group(self, group: List[Dict]) -> List[torch.Tensor]:
+        """Process a group of similar transitions."""
+        losses = []
+        
+        for item in group:
+            state = item['state']
+            valid_actions = item['valid_actions']
+            target_idx = item['action_encoding']['index']
+            
+            # Get policy output
+            with perf_monitor.timer("bc_policy_forward"):
+                action_probs, _, action_info = self.policy_net.forward(state, valid_actions)
+            
+            if len(action_info) > target_idx:
+                # Compute cross-entropy loss
+                if isinstance(action_probs, torch.Tensor):
+                    if action_probs.dim() == 0:
+                        action_probs = action_probs.unsqueeze(0)
+                    
+                    # Create target distribution
+                    target = torch.zeros_like(action_probs)
+                    target[target_idx] = 1.0
+                    
+                    # Cross-entropy loss
+                    loss = -torch.sum(target * torch.log(action_probs + 1e-8))
+                    losses.append(loss)
+        
+        return losses
+    
+    @profile("collect_mixed_rollouts")
+    def collect_mixed_rollouts(self, n_steps: int):
+        """Optimized rollout collection with mixed policy."""
         self.ppo.rollout_buffer.reset()
         state = self.env.reset()
         episode_reward = 0
@@ -186,173 +328,183 @@ class ImitationLearningTrainer:
         expert_actions_used = 0
         
         for step in range(n_steps):
-            state_repr = self.env.state.get_state_representation()
-            valid_actions = self.env.get_valid_actions()
-            
-            if not valid_actions['map'] and not valid_actions['schedule']:
-                break
-            
-            # Decide whether to use expert or learned policy
-            use_expert = np.random.random() < self.expert_prob
-            
-            if use_expert:
-                # Get expert action
-                action = self.expert.get_expert_action(state_repr, valid_actions)
-                expert_actions_used += 1
+            with perf_monitor.timer("rollout_step"):
+                state_repr = self.env.state.get_state_representation()
+                valid_actions = self.env.get_valid_actions()
                 
-                # Calculate what the policy would have done for logging
-                with torch.no_grad():
-                    _, log_prob = self.policy_net.get_action(state_repr, valid_actions)
-                    value = self.value_net(state_repr)
-            else:
-                # Get action from learned policy
-                with torch.no_grad():
-                    action, log_prob = self.policy_net.get_action(
-                        state_repr, valid_actions, deterministic=False
-                    )
-                    value = self.value_net(state_repr)
-            
-            # Execute action
-            next_state, base_reward, done, info = self.env.step(action)
-            
-            # Calculate enhanced reward
-            expert_action = self.expert.get_expert_action(state_repr, valid_actions)
-            reward = self.reward_fn.calculate_reward(
-                self.env, action, info, expert_action
-            )
-            
-            # Convert tensors to scalars
-            value_scalar = value.item() if isinstance(value, torch.Tensor) else float(value)
-            log_prob_scalar = log_prob.item() if isinstance(log_prob, torch.Tensor) else float(log_prob)
-            
-            # Store transition - use the correct method signature
-            self.ppo.rollout_buffer.add(
-                state=state_repr,
-                action=action,
-                reward=reward,
-                value=value_scalar,
-                log_prob=log_prob_scalar,
-                done=done,
-                valid_actions=valid_actions
-            )
-            
-            episode_reward += reward
-            episode_length += 1
-            
-            if done:
-                self.stats['ppo_rewards'].append(episode_reward)
-                self.stats['completion_rate'].append(self.env._get_completion_rate())
+                if not valid_actions['map'] and not valid_actions['schedule']:
+                    break
                 
-                state = self.env.reset()
-                episode_reward = 0
-                episode_length = 0
-                expert_actions_used = 0
-            else:
-                state = next_state
+                # Decide policy
+                use_expert = np.random.random() < self.expert_prob
+                
+                if use_expert:
+                    with perf_monitor.timer("expert_action_in_rollout"):
+                        action = self.expert.get_expert_action(state_repr, valid_actions)
+                        expert_actions_used += 1
+                    
+                    with torch.no_grad():
+                        _, log_prob = self.policy_net.get_action(state_repr, valid_actions)
+                        value = self.value_net(state_repr)
+                else:
+                    with torch.no_grad():
+                        with perf_monitor.timer("policy_action_in_rollout"):
+                            action, log_prob = self.policy_net.get_action(
+                                state_repr, valid_actions, deterministic=False
+                            )
+                        value = self.value_net(state_repr)
+                
+                # Execute action
+                next_state, base_reward, done, info = self.env.step(action)
+                
+                # Calculate enhanced reward
+                expert_action = self.expert.get_expert_action(state_repr, valid_actions)
+                reward = self.reward_fn.calculate_reward(
+                    self.env, action, info, expert_action
+                )
+                
+                # Store transition
+                value_scalar = value.item() if isinstance(value, torch.Tensor) else float(value)
+                log_prob_scalar = log_prob.item() if isinstance(log_prob, torch.Tensor) else float(log_prob)
+                
+                self.ppo.rollout_buffer.add(
+                    state=state_repr,
+                    action=action,
+                    reward=reward,
+                    value=value_scalar,
+                    log_prob=log_prob_scalar,
+                    done=done,
+                    valid_actions=valid_actions
+                )
+                
+                episode_reward += reward
+                episode_length += 1
+                
+                if done:
+                    self.stats['ppo_rewards'].append(episode_reward)
+                    self.stats['completion_rate'].append(self.env._get_completion_rate())
+                    
+                    state = self.env.reset()
+                    episode_reward = 0
+                    episode_length = 0
+                    expert_actions_used = 0
+                else:
+                    state = next_state
         
-        # Track expert usage rate
         if episode_length > 0:
             self.stats['expert_match_rate'].append(expert_actions_used / episode_length)
     
     def train(self, total_timesteps: int):
-        """
-        Main training loop combining imitation learning and RL.
+        """Main training loop with performance monitoring."""
+        print("="*60)
+        print("OPTIMIZED UNIQ-RL TRAINING WITH IMITATION LEARNING")
+        print("="*60)
         
-        Args:
-            total_timesteps: Total training timesteps
-        """
-        print("="*60)
-        print("UNIQ-RL TRAINING WITH IMITATION LEARNING")
-        print("="*60)
+        overall_start = time.time()
         
         # Phase 1: Generate expert demonstrations
         print("\nPhase 1: Generating expert demonstrations...")
-        self.generate_expert_demonstrations(num_episodes=20)
+        phase1_start = time.time()
+        with perf_monitor.timer("phase1_expert_demos"):
+            self.generate_expert_demonstrations(num_episodes=20)
+        print(f"Phase 1 completed in {time.time() - phase1_start:.2f}s")
         
         # Phase 2: Behavioral cloning pretraining
         print("\nPhase 2: Behavioral cloning pretraining...")
-        for epoch in range(20):
-            bc_loss = self.behavioral_cloning_update()
-            if epoch % 5 == 0:
-                print(f"  BC Epoch {epoch}: Loss={bc_loss:.4f}")
+        phase2_start = time.time()
+        with perf_monitor.timer("phase2_bc_pretraining"):
+            for epoch in range(20):
+                bc_loss = self.behavioral_cloning_update()
+                if epoch % 5 == 0:
+                    print(f"  BC Epoch {epoch}: Loss={bc_loss:.4f}")
+        print(f"Phase 2 completed in {time.time() - phase2_start:.2f}s")
         
         # Phase 3: Mixed training with PPO
         print("\nPhase 3: Mixed training with PPO...")
-        
-        num_updates = total_timesteps // self.ppo.rollout_length
-        
-        # Gradually decrease expert probability
-        initial_expert_prob = self.expert_prob
-        
-        for update in range(num_updates):
-            # Decay expert probability
-            progress = update / num_updates
-            self.expert_prob = initial_expert_prob * (1 - progress * 0.8)  # Decay to 20% of initial
+        phase3_start = time.time()
+        with perf_monitor.timer("phase3_mixed_training"):
+            num_updates = total_timesteps // self.ppo.rollout_length
+            initial_expert_prob = self.expert_prob
             
-            # Collect mixed rollouts
-            self.collect_mixed_rollouts(self.ppo.rollout_length)
-            
-            # PPO update
-            if len(self.ppo.rollout_buffer) > 0:
-                ppo_stats = self.ppo.update()
-            
-            # Periodic behavioral cloning
-            if update % 10 == 0 and len(self.expert_buffer) > 0:
-                bc_loss = self.behavioral_cloning_update()
-            
-            # Logging
-            if update % 10 == 0:
-                self._log_training_stats(update, num_updates)
+            for update in range(num_updates):
+                # Decay expert probability
+                progress = update / num_updates
+                self.expert_prob = initial_expert_prob * (1 - progress * 0.8)
+                
+                # Collect rollouts
+                with perf_monitor.timer(f"rollout_collection_{update}"):
+                    self.collect_mixed_rollouts(self.ppo.rollout_length)
+                
+                # PPO update
+                if len(self.ppo.rollout_buffer) > 0:
+                    with perf_monitor.timer(f"ppo_update_{update}"):
+                        ppo_stats = self.ppo.update()
+                
+                # Periodic BC
+                if update % 10 == 0 and len(self.expert_buffer) > 0:
+                    with perf_monitor.timer(f"bc_update_{update}"):
+                        bc_loss = self.behavioral_cloning_update()
+                
+                # Logging
+                if update % 10 == 0:
+                    self._log_training_stats(update, num_updates)
         
-        print("\nTraining completed!")
+        print(f"Phase 3 completed in {time.time() - phase3_start:.2f}s")
+        
+        overall_time = time.time() - overall_start
+        print(f"\nTraining completed in {overall_time:.2f} seconds!")
+        
+        # Print performance summary
+        if self.enable_profiling:
+            perf_monitor.print_summary()
+        
         self._print_final_stats()
     
     def _log_training_stats(self, update: int, total_updates: int):
-        """Log training statistics."""
+        """Log training statistics with timing info."""
         print(f"\nUpdate {update}/{total_updates} (Expert prob: {self.expert_prob:.2f})")
         
+        # Log performance stats if available
+        if self.enable_profiling:
+            rollout_stats = perf_monitor.get_stats(f"rollout_collection_{update}")
+            if 'last' in rollout_stats:
+                print(f"  Rollout time: {rollout_stats['last']:.2f}s")
+        
+        # Log training metrics
         if self.stats['ppo_rewards']:
-            # Convert deque to list for slicing
             rewards_list = list(self.stats['ppo_rewards'])
             avg_reward = np.mean(rewards_list[-10:]) if len(rewards_list) > 0 else 0
             print(f"  Avg Reward: {avg_reward:.2f}")
-        else:
-            avg_reward = 0
         
         if self.stats['completion_rate']:
-            # Convert deque to list for slicing
             completion_list = list(self.stats['completion_rate'])
             avg_completion = np.mean(completion_list[-10:]) if len(completion_list) > 0 else 0
             print(f"  Avg Completion: {avg_completion:.2%}")
-        else:
-            avg_completion = 0
         
         if self.stats['expert_match_rate']:
-            # Convert deque to list for slicing
             match_list = list(self.stats['expert_match_rate'])
             avg_match = np.mean(match_list[-10:]) if len(match_list) > 0 else 0
             print(f"  Expert Match Rate: {avg_match:.2%}")
-        else:
-            avg_match = 0
         
         if self.stats['bc_loss']:
-            # Convert deque to list for slicing
             bc_loss_list = list(self.stats['bc_loss'])
-            avg_bc_loss = np.mean(bc_loss_list[-10:]) if len(bc_loss_list) > 0 else 0
-            print(f"  BC Loss: {avg_bc_loss:.4f}")
-        else:
-            avg_bc_loss = 0
+            if bc_loss_list:
+                avg_bc_loss = np.mean(bc_loss_list[-10:])
+                print(f"  BC Loss: {avg_bc_loss:.4f}")
         
-        # Log to wandb
+        # Log to wandb if available
         if self.use_wandb:
-            wandb.log({
-                'reward': avg_reward,
-                'completion_rate': avg_completion,
-                'expert_match_rate': avg_match,
-                'bc_loss': avg_bc_loss,
-                'expert_prob': self.expert_prob,
-                'update': update
-            })
+            log_dict = {
+                'update': update,
+                'expert_prob': self.expert_prob
+            }
+            if self.stats['ppo_rewards']:
+                log_dict['reward'] = avg_reward
+            if self.stats['completion_rate']:
+                log_dict['completion_rate'] = avg_completion
+            if self.stats['expert_match_rate']:
+                log_dict['expert_match_rate'] = avg_match
+            wandb.log(log_dict)
     
     def _print_final_stats(self):
         """Print final training statistics."""

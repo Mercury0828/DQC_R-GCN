@@ -1,5 +1,5 @@
 """
-UNIQ expert policy for imitation learning.
+Fixed UNIQ expert policy for imitation learning.
 Uses the GreedyJIT algorithm from UNIQ paper as expert demonstrations.
 """
 
@@ -182,38 +182,36 @@ class UNIQExpertPolicy:
         for g in gates:
             score = 0
             
-            # Factor 1: Number of successor gates (critical path)
-            successors = self._count_successors(g)
+            # Factor 1: Number of successor gates (critical path) - simplified
+            successors = self._count_successors_simple(g)
             score += successors * 10
             
             # Factor 2: Is it a cross-QPU gate? (schedule early to manage EPR)
             if self.env.state.is_remote_gate(g):
                 score += 5
             
-            # Factor 3: Gate depth in dependency graph
-            depth = self._get_gate_depth(g)
+            # Factor 3: Gate depth in dependency graph - simplified
+            depth = self._get_gate_depth_simple(g)
             score += (100 - depth)  # Earlier gates get higher priority
             
             priorities[g] = score
         
         return priorities
     
-    def _count_successors(self, gate: int) -> int:
-        """Count number of gates that depend on this gate."""
+    def _count_successors_simple(self, gate: int) -> int:
+        """Count number of gates that depend on this gate (simplified)."""
         count = 0
         for pred, succ in self.problem_data['P']:
             if pred == gate:
                 count += 1
-                count += self._count_successors(succ)  # Recursive count
         return count
     
-    def _get_gate_depth(self, gate: int) -> int:
-        """Get depth of gate in dependency graph."""
+    def _get_gate_depth_simple(self, gate: int) -> int:
+        """Get depth of gate in dependency graph (simplified)."""
         depth = 0
         for pred, succ in self.problem_data['P']:
             if succ == gate:
-                pred_depth = self._get_gate_depth(pred)
-                depth = max(depth, pred_depth + 1)
+                depth = max(depth, 1)  # Simplified - just check if it has predecessors
         return depth
     
     def generate_expert_trajectory(self, env, max_steps: int = 1000) -> List[Dict]:
