@@ -1,0 +1,15 @@
+{"step": 42, "phase": "phase2", "timestamp": 1759800801.458259, "metrics": {"avg_reward": 481.55218810820924, "completion_rate": 1.0, "bc_loss": 1.6536705553531643, "expert_probability": 0.8}}
+{"step": 43, "phase": "phase2", "timestamp": 1759800848.7788305, "metrics": {"avg_reward": 494.70266819848746, "completion_rate": 1.0, "bc_loss": 1.6536705553531643, "expert_probability": 0.8}}
+{"step": 44, "phase": "phase2", "timestamp": 1759800936.3383033, "metrics": {"avg_reward": 495.6285698092223, "completion_rate": 1.0, "bc_loss": 1.6536705553531643, "expert_probability": 0.8}}
+{"step": 45, "phase": "phase2", "timestamp": 1759800994.1608438, "metrics": {"avg_reward": 485.58199847948055, "completion_rate": 1.0, "bc_loss": 1.6536705553531643, "expert_probability": 0.8}}
+{"step": 46, "phase": "phase2", "timestamp": 1759801034.6746259, "metrics": {"avg_reward": 491.2828742955019, "completion_rate": 1.0, "bc_loss": 1.6536705553531643, "expert_probability": 0.8}}
+{"step": 47, "phase": "phase2", "timestamp": 1759801074.8905613, "metrics": {"avg_reward": 474.85604067869207, "completion_rate": 1.0, "bc_loss": 1.6536705553531643, "expert_probability": 0.8}}
+{"step": 48, "phase": "phase2", "timestamp": 1759801114.3535895, "metrics": {"avg_reward": 478.4705852562932, "completion_rate": 1.0, "bc_loss": 1.6536705553531643, "expert_probability": 0.8}}
+{"step": 49, "phase": "phase2", "timestamp": 1759801161.5804467, "metrics": {"avg_reward": 490.1786080589929, "completion_rate": 1.0, "bc_loss": 1.6536705553531643, "expert_probability": 0.8}}
+{"step": 50, "phase": "phase2", "timestamp": 1759801203.6562057, "metrics": {"avg_reward": 487.83788434718934, "completion_rate": 1.0, "bc_loss": 1.6536705553531643, "expert_probability": 0.8}}
+{"step": 51, "phase": "phase2", "timestamp": 1759801243.9351482, "metrics": {"avg_reward": 470.45913791611594, "completion_rate": 1.0, "bc_loss": 1.6536705553531643, "expert_probability": 0.8}}
+{"step": 53, "phase": "phase2", "timestamp": 1759801321.4691226, "metrics": {"avg_reward": 501.99240977709906, "completion_rate": 1.0, "bc_loss": 1.6536705553531643, "expert_probability": 0.8}}
+{"step": 54, "phase": "phase2", "timestamp": 1759801361.2907047, "metrics": {"avg_reward": 479.42160372712067, "completion_rate": 1.0, "bc_loss": 1.6536705553531643, "expert_probability": 0.8}}
+{"step": 55, "phase": "phase2", "timestamp": 1759801401.5543237, "metrics": {"avg_reward": 490.21763181151454, "completion_rate": 1.0, "bc_loss": 1.6536705553531643, "expert_probability": 0.8}}
+{"step": 56, "phase": "phase2", "timestamp": 1759801445.9601333, "metrics": {"avg_reward": 490.1729173958206, "completion_rate": 1.0, "bc_loss": 1.6536705553531643, "expert_probability": 0.8}}
+{"step": 57, "phase": "phase2", "timestamp": 1759801500.4463608, "metrics": {"avg_reward": 475.67701092508776, "completion_rate": 1.0, "bc_loss": 1.6536705553531643, "expert_probability": 0.8}}

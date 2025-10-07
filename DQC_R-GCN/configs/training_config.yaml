@@ -82,17 +82,20 @@ imitation_learning:
   # Reward weights (OPTIMIZED)
   reward_weights:
     w_alloc: 1.0
-    w_schedule: 1.0
+    w_schedule: 1.5
     w_progress: 0.001  # Reduced from 0.005
     w_expert: 2.0  # Increased from 1.0
     r_expert_match: 5.0  # Increased from 2.0
-    r_completion: 20.0  # Increased from 10.0
+    r_completion: 30.0  # Increased from 10.0
     r_colocate: 1.0  # Increased from 0.5
     r_separate: 0.5  # Reduced from 1.0
-    r_time: 2.0  # Increased from 1.0
+    r_time: 3.0  # Increased from 1.0
     r_parallel_epr: 1.0  # Increased from 0.5
-    r_step: 0.001  # Reduced from 0.005
+    r_step: 0.0001  # Reduced from 0.005
     r_intermediate_completion: 5.0  # NEW: reward for partial completion
+    r_progress_bonus: 3.0  # 新增：调度进度奖励
+    r_schedule_delay_penalty: 1  # 新增：调度延迟惩罚
+    r_balanced_progress: 2.0  # 平衡进度奖励
 
 # Training schedule
 training:

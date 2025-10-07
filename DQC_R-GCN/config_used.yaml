@@ -24,18 +24,21 @@ imitation_learning:
   min_bc_loss_threshold: 1.5
   num_expert_episodes: 50
   reward_weights:
+    r_balanced_progress: 2.0
     r_colocate: 1.0
-    r_completion: 20.0
+    r_completion: 30.0
     r_expert_match: 5.0
     r_intermediate_completion: 5.0
     r_parallel_epr: 1.0
+    r_progress_bonus: 3.0
+    r_schedule_delay_penalty: 1
     r_separate: 0.5
-    r_step: 0.001
-    r_time: 2.0
+    r_step: 0.0001
+    r_time: 3.0
     w_alloc: 1.0
     w_expert: 2.0
     w_progress: 0.001
-    w_schedule: 1.0
+    w_schedule: 1.5
 model:
   dropout: 0.1
   hidden_dim: 128

@@ -1,25 +1,25 @@
 {
   "Best Model": {
-    "avg_reward": -55.25426845366337,
-    "std_reward": 11.137398425063047,
-    "min_reward": -82.9141719748527,
-    "max_reward": -35.89943765372993,
-    "avg_completion": 0.615,
-    "std_completion": 0.03201562118716425,
-    "success_rate": 0.0,
-    "avg_steps": 200.0,
-    "avg_time": 1.3008606672286986
+    "avg_reward": -30.992811027397046,
+    "std_reward": 7.105427357601002e-15,
+    "min_reward": -30.992811027397053,
+    "max_reward": -30.992811027397053,
+    "avg_completion": 1.0,
+    "std_completion": 0.0,
+    "success_rate": 1.0,
+    "avg_steps": 32.0,
+    "avg_time": 0.8969708561897278
   },
   "Final Model": {
-    "avg_reward": -55.67173836112573,
-    "std_reward": 7.959661038434673,
-    "min_reward": -75.65090585122982,
-    "max_reward": -44.884511186587346,
-    "avg_completion": 0.62,
-    "std_completion": 0.045825756949558386,
-    "success_rate": 0.0,
-    "avg_steps": 200.0,
-    "avg_time": 1.3133888840675354
+    "avg_reward": -30.992811027397046,
+    "std_reward": 7.105427357601002e-15,
+    "min_reward": -30.992811027397053,
+    "max_reward": -30.992811027397053,
+    "avg_completion": 1.0,
+    "std_completion": 0.0,
+    "success_rate": 1.0,
+    "avg_steps": 32.0,
+    "avg_time": 0.9623824834823609
   },
   "Expert": {
     "avg_reward": 0.48619139028607633,
@@ -30,6 +30,6 @@
     "std_completion": 0.0,
     "success_rate": 1.0,
     "avg_steps": 32.0,
-    "avg_time": 0.05151021480560303
+    "avg_time": 0.05364128351211548
   }
 }

@@ -1,0 +1,79 @@
+problem:
+  small:
+    num_gates: 20
+    num_qpus: 3
+    num_qubits: 12
+    qpu_capacity: 5
+    time_horizon: 30
+
+model:
+  hidden_dim: 128
+  num_layers: 3
+  num_bases: 8
+  dropout: 0.1
+  num_heads: 4
+  use_interaction_features: true
+  interaction_feature_dim: 64
+
+ppo:
+  learning_rate: 5e-6 
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_epsilon: 0.1
+  value_coef: 0.5
+  entropy_coef: 0.005 
+  max_grad_norm: 0.5
+  rollout_length: 256
+  minibatch_size: 32
+  num_epochs: 5
+
+imitation_learning:
+  bc_pretrain_epochs: 300  
+  bc_pretrain_batch_size: 32
+  bc_pretrain_lr: 5e-4
+  bc_l2_regularization: 0.001
+  
+  num_expert_episodes: 100 
+  expert_buffer_size: 20000
+  
+  initial_expert_prob: 0.9 
+  final_expert_prob: 0.4  
+  
+  reward_weights:
+    r_colocate: 5.0         
+    r_separate: 3.0        
+    r_communication: 2.0    
+
+    r_time: 2.0
+    r_parallel_epr: 1.0
+    r_completion: 30.0
+    r_intermediate_completion: 5.0
+    
+    r_expert_match: 10.0   
+    r_step: 0.0001
+    w_alloc: 2.0          
+    w_schedule: 1.0
+    w_progress: 0.001
+    w_expert: 3.0      
+    
+    r_placement_quality: 10.0 
+
+training:
+
+  two_stage_training: true
+  
+  stage1:
+    enabled: true
+    episodes: 200
+    only_mapping: true
+    expert_prob: 0.95
+    bc_weight: 2.0 
+    
+  stage2:
+    enabled: true
+    timesteps: 50000
+    initial_expert_prob: 0.7
+    final_expert_prob: 0.3
+    
+  monitor_placement_quality: true
+  placement_quality_threshold: 0.7 
