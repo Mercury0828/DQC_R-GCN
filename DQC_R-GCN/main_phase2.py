@@ -19,6 +19,29 @@ from models import RGCN, PolicyNetwork, ValueNetwork
 from algorithms.ppo import PPO
 from training.imitation_learning import ImitationLearningTrainer
 from utils.training_monitor import TrainingMonitor
+from utils.checkpoint_manager import CheckpointManager
+
+class PerformanceTracker:
+    """Track performance and adjust training dynamically."""
+    def __init__(self):
+        self.best_reward = -float('inf')
+        self.recent_rewards = []
+        self.performance_drops = 0
+        
+    def update(self, reward):
+        self.recent_rewards.append(reward)
+        if len(self.recent_rewards) > 20:
+            self.recent_rewards.pop(0)
+        
+        if reward > self.best_reward:
+            self.best_reward = reward
+            self.performance_drops = 0
+        elif len(self.recent_rewards) >= 10:
+            avg_recent = np.mean(self.recent_rewards[-10:])
+            if avg_recent < self.best_reward * 0.7:
+                self.performance_drops += 1
+                return True  # Signal performance drop
+        return False
 
 def load_config(config_path="configs/training_config.yaml"):
     """Load and validate configuration."""
@@ -104,7 +127,7 @@ def phase1_bc_pretraining_monitored(trainer, monitor, config):
     print(f"\nPhase 1 complete. Final BC loss: {loss:.4f}")
     return best_loss
 
-def phase2_mixed_training_adaptive(trainer, monitor, config):
+def phase2_mixed_training_adaptive(trainer, monitor, config,checkpoint_manager):
     """Adaptive Phase 2 with performance monitoring."""
     print("\n" + "="*60)
     print("PHASE 2: ADAPTIVE MIXED TRAINING")
@@ -123,13 +146,42 @@ def phase2_mixed_training_adaptive(trainer, monitor, config):
     expert_prob_adjustments = 0
     
     for update in range(num_updates):
-        # Get scheduled expert probability
+        # 添加自适应专家概率调整
         current_steps = update * trainer.ppo.rollout_length
-        scheduled_prob = monitor.get_expert_probability_schedule(current_steps)
         
-        # Apply any adaptive adjustments
-        if trainer.expert_prob < scheduled_prob:
-            trainer.expert_prob = scheduled_prob
+        # 计算基础专家概率
+        if current_steps < 10000:
+            base_expert_prob = 0.8
+        elif current_steps < 20000:
+            base_expert_prob = 0.7
+        elif current_steps < 30000:
+            base_expert_prob = 0.6
+        elif current_steps < 40000:
+            base_expert_prob = 0.5
+        else:
+            base_expert_prob = 0.4
+        
+        # 检查性能并调整
+        performance_tracker = PerformanceTracker()
+        if len(trainer.stats['ppo_rewards']) > 0:
+            current_reward = np.mean(list(trainer.stats['ppo_rewards'])[-10:])
+            if performance_tracker.update(current_reward):
+                print(f"  [ADAPTIVE] Performance drop detected, increasing expert prob")
+                trainer.expert_prob = min(1.0, base_expert_prob + 0.2)
+            else:
+                trainer.expert_prob = base_expert_prob
+        else:
+            trainer.expert_prob = base_expert_prob
+        
+        # # 原有的代码继续...
+
+        # # Get scheduled expert probability
+        # current_steps = update * trainer.ppo.rollout_length
+        # scheduled_prob = monitor.get_expert_probability_schedule(current_steps)
+        
+        # # Apply any adaptive adjustments
+        # if trainer.expert_prob < scheduled_prob:
+        #     trainer.expert_prob = scheduled_prob
         
         # Collect rollouts
         trainer.collect_mixed_rollouts(trainer.ppo.rollout_length)
@@ -158,6 +210,10 @@ def phase2_mixed_training_adaptive(trainer, monitor, config):
         if actions:
             if actions.get('save_best_model'):
                 monitor.save_best_model(trainer.policy_net, trainer.value_net, dict(trainer.stats))
+                checkpoint_manager.save_checkpoint(
+                trainer.policy_net, trainer.value_net, 
+                metrics, update, "phase2"
+                )
             
             if actions.get('increase_expert_prob'):
                 # Adaptive increase in expert probability
@@ -193,17 +249,28 @@ def phase2_mixed_training_adaptive(trainer, monitor, config):
     
     print(f"\nPhase 2 complete. Expert prob adjustments: {expert_prob_adjustments}")
 
-def phase3_finetuning_safeguarded(trainer, monitor, config):
+def phase3_finetuning_safeguarded(trainer, monitor, config, checkpoint_manager):
     """Phase 3 with performance safeguards."""
     print("\n" + "="*60)
     print("PHASE 3: SAFEGUARDED FINE-TUNING")
     print("="*60)
+        # ===== 在Phase 3开始前，加载最佳Phase 2模型 =====
+    print("\nLoading best Phase 2 checkpoint for Phase 3...")
+    success = checkpoint_manager.load_best_checkpoint(
+        trainer.policy_net, 
+        trainer.value_net, 
+        phase="phase2"
+    )
+    
+    if not success:
+        print("Warning: Could not load Phase 2 checkpoint, continuing with current model")
+    
     
     training_config = config['training']
     
-    # Set minimum expert probability
-    min_expert_prob = training_config.get('phase3_min_expert_prob', 0.1)
-    trainer.expert_prob = max(min_expert_prob, training_config.get('phase3_expert_prob', 0.05))
+    # 修改：提高最小专家概率
+    min_expert_prob = 0.3  # 从0.1改为0.3
+    trainer.expert_prob = min_expert_prob
     
     timesteps = training_config['phase3_timesteps']
     num_updates = timesteps // trainer.ppo.rollout_length
@@ -211,9 +278,9 @@ def phase3_finetuning_safeguarded(trainer, monitor, config):
     print(f"\nFine-tuning for {timesteps} timesteps")
     print(f"Expert probability: {trainer.expert_prob:.2f} (min: {min_expert_prob:.2f})")
     
-    # Track performance for safeguards
-    baseline_performance = calculate_current_metrics(trainer).get('avg_reward', 0)
-    performance_drops = 0
+    # 添加：保存Phase 2最佳性能作为基准
+    phase2_baseline = calculate_current_metrics(trainer).get('avg_reward', 0)
+    performance_threshold = phase2_baseline * 0.6  # 如果性能低于60%就介入
     
     for update in range(num_updates):
         # Collect rollouts
@@ -227,35 +294,23 @@ def phase3_finetuning_safeguarded(trainer, monitor, config):
         metrics = calculate_current_metrics(trainer)
         metrics['expert_probability'] = trainer.expert_prob
         
-        # Monitor
-        actions = monitor.update_metrics(metrics, phase="phase3")
-        
-        # Handle actions
-        if actions:
-            if actions.get('save_best_model'):
-                monitor.save_best_model(trainer.policy_net, trainer.value_net, dict(trainer.stats))
+        # 添加：性能保护机制
+        current_performance = metrics.get('avg_reward', 0)
+        if current_performance < performance_threshold:
+            print(f"  [SAFEGUARD] Performance below threshold ({current_performance:.2f} < {performance_threshold:.2f})")
+            trainer.expert_prob = min(1.0, trainer.expert_prob + 0.1)
+            print(f"  [SAFEGUARD] Increased expert prob to {trainer.expert_prob:.2f}")
             
-            if actions.get('revert_checkpoint'):
-                print("  [SAFEGUARD] Performance drop detected, considering revert")
-                performance_drops += 1
-                
-                if performance_drops >= 3:
-                    print("  [SAFEGUARD] Multiple drops detected, reverting to Phase 2 settings")
-                    trainer.expert_prob = 0.3  # Increase expert guidance
-                    break
-        
-        # Check performance safeguards
-        if training_config.get('phase3_performance_safeguard', True):
-            current_performance = metrics.get('avg_reward', 0)
-            if current_performance < baseline_performance * 0.5:
-                print(f"  [SAFEGUARD] Performance dropped significantly ({current_performance:.2f} vs {baseline_performance:.2f})")
-                trainer.expert_prob = min(1.0, trainer.expert_prob * 2)  # Double expert probability
+            # 如果性能太低，考虑提前结束
+            if current_performance < phase2_baseline * 0.4:
+                print(f"  [SAFEGUARD] Performance too low, stopping Phase 3")
+                break
         
         # Logging
         if update % training_config['log_frequency'] == 0:
             log_training_progress(trainer, update, num_updates, metrics, phase="Phase 3")
     
-    print(f"\nPhase 3 complete. Performance drops: {performance_drops}")
+    #print(f"\nPhase 3 complete. Performance drops: {performance_drops}")
 
 def test_expert_probabilities(trainer, num_samples=5):
     """Test current expert action probabilities."""
@@ -392,6 +447,8 @@ def main():
     }
     
     trainer = ImitationLearningTrainer(env, policy_net, value_net, ppo, trainer_config)
+
+    checkpoint_manager = CheckpointManager()
     
     # Create monitor
     monitor = TrainingMonitor(config)
@@ -404,10 +461,10 @@ def main():
         bc_loss = phase1_bc_pretraining_monitored(trainer, monitor, config)
         
         # Phase 2: Adaptive Mixed Training
-        phase2_mixed_training_adaptive(trainer, monitor, config)
+        phase2_mixed_training_adaptive(trainer, monitor, config, checkpoint_manager)
         
-        # Phase 3: Safeguarded Fine-tuning
-        phase3_finetuning_safeguarded(trainer, monitor, config)
+        # # Phase 3: Safeguarded Fine-tuning
+        # phase3_finetuning_safeguarded(trainer, monitor, config, checkpoint_manager)
         
     except KeyboardInterrupt:
         print("\n[INTERRUPTED] Training stopped by user")

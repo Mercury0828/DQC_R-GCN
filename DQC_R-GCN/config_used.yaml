@@ -9,17 +9,17 @@ imitation_learning:
   expert_decay:
     stages:
     - prob: 0.8
-      steps: 5000
-    - prob: 0.6
       steps: 10000
-    - prob: 0.4
-      steps: 15000
-    - prob: 0.3
+    - prob: 0.7
       steps: 20000
-    - prob: 0.2
-      steps: 25000
+    - prob: 0.6
+      steps: 30000
+    - prob: 0.5
+      steps: 40000
+    - prob: 0.4
+      steps: 50000
     type: staged
-  final_expert_prob: 0.2
+  final_expert_prob: 0.3
   initial_expert_prob: 0.8
   min_bc_loss_threshold: 1.5
   num_expert_episodes: 50
@@ -50,11 +50,11 @@ paths:
   model_save: phase2_model_optimized.pt
   tensorboard_dir: tensorboard/
 ppo:
-  clip_epsilon: 0.2
+  clip_epsilon: 0.1
   entropy_coef: 0.01
   gae_lambda: 0.95
   gamma: 0.99
-  learning_rate: 5e-5
+  learning_rate: 1e-5
   max_grad_norm: 0.5
   minibatch_size: 64
   num_epochs: 10
@@ -100,8 +100,8 @@ training:
   phase1_min_expert_prob: 0.5
   phase2_adaptive_expert: true
   phase2_performance_threshold: 0.8
-  phase2_timesteps: 30000
-  phase3_min_expert_prob: 0.1
+  phase2_timesteps: 10000
+  phase3_min_expert_prob: 0.3
   phase3_performance_safeguard: true
   phase3_timesteps: 20000
   save_frequency: 50

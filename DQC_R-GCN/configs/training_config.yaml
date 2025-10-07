@@ -32,10 +32,10 @@ model:
 
 # PPO configuration
 ppo:
-  learning_rate: 5e-5  # Reduced for stability
+  learning_rate: 1e-5  # Reduced for stability
   gamma: 0.99
   gae_lambda: 0.95
-  clip_epsilon: 0.2
+  clip_epsilon: 0.1
   value_coef: 0.5
   entropy_coef: 0.01
   max_grad_norm: 0.5
@@ -57,22 +57,22 @@ imitation_learning:
   
   # Mixed training - SLOWER TRANSITION
   initial_expert_prob: 0.8  # Increased from 0.5
-  final_expert_prob: 0.2  # Increased from 0.1
+  final_expert_prob: 0.3  # Increased from 0.1
   
   # Expert decay strategy
   expert_decay:
-    type: "staged"  # Changed from linear
+    type: "staged"
     stages:
-      - steps: 5000
-        prob: 0.8
       - steps: 10000
-        prob: 0.6
-      - steps: 15000
-        prob: 0.4
+        prob: 0.8
       - steps: 20000
-        prob: 0.3
-      - steps: 25000
-        prob: 0.2
+        prob: 0.7
+      - steps: 30000
+        prob: 0.6
+      - steps: 40000
+        prob: 0.5
+      - steps: 50000
+        prob: 0.4
   
   # BC during PPO
   bc_epochs_per_update: 5  # Increased from 3
@@ -103,13 +103,13 @@ training:
   phase1_min_expert_prob: 0.5  # Minimum expert probability to achieve
   
   # Phase 2: Mixed training with staged decay
-  phase2_timesteps: 30000  # Increased from 25000
+  phase2_timesteps: 10000  # Increased from 25000
   phase2_performance_threshold: 0.8  # Maintain this completion rate
   phase2_adaptive_expert: true  # Increase expert prob if performance drops
   
   # Phase 3: Fine-tuning with safety net
   phase3_timesteps: 20000  # Reduced from 25000
-  phase3_min_expert_prob: 0.1  # Never go below this
+  phase3_min_expert_prob: 0.3  # Never go below this
   phase3_performance_safeguard: true  # Revert to phase2 if performance drops
   
   # Total timesteps

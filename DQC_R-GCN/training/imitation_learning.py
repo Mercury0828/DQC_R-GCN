@@ -74,7 +74,7 @@ class ImitationLearningTrainer:
         # Behavioral cloning optimizer
         self.bc_optimizer = optim.Adam(
             self.policy_net.parameters(),
-            lr=config.get('bc_lr', 3e-4)
+            lr=float(config.get('bc_lr', 3e-4))
         )
         
         # Training statistics

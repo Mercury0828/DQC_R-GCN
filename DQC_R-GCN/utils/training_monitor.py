@@ -223,12 +223,13 @@ class TrainingMonitor:
         for ax in self.axes.flat:
             ax.clear()
         
-        # Plot metrics
-        steps = list(range(len(self.metrics_history['avg_reward'])))
+        # Plot metrics - FIX: ensure consistent lengths
         
         # Rewards
         if self.metrics_history['avg_reward']:
-            self.axes[0, 0].plot(steps, list(self.metrics_history['avg_reward']))
+            rewards = list(self.metrics_history['avg_reward'])
+            steps = list(range(len(rewards)))
+            self.axes[0, 0].plot(steps, rewards)
             self.axes[0, 0].set_title('Average Reward')
             self.axes[0, 0].set_xlabel('Updates')
             self.axes[0, 0].set_ylabel('Reward')
@@ -236,8 +237,10 @@ class TrainingMonitor:
         
         # Completion rate
         if self.metrics_history['completion_rate']:
-            completion_pct = [x * 100 for x in self.metrics_history['completion_rate']]
-            self.axes[0, 1].plot(steps[:len(completion_pct)], completion_pct)
+            completions = list(self.metrics_history['completion_rate'])
+            completion_pct = [x * 100 for x in completions]
+            steps = list(range(len(completion_pct)))  # FIX: generate steps for this data
+            self.axes[0, 1].plot(steps, completion_pct)
             self.axes[0, 1].set_title('Completion Rate')
             self.axes[0, 1].set_xlabel('Updates')
             self.axes[0, 1].set_ylabel('Rate (%)')
@@ -246,8 +249,10 @@ class TrainingMonitor:
         
         # Expert match rate
         if self.metrics_history['expert_match_rate']:
-            match_pct = [x * 100 for x in self.metrics_history['expert_match_rate']]
-            self.axes[1, 0].plot(steps[:len(match_pct)], match_pct)
+            matches = list(self.metrics_history['expert_match_rate'])
+            match_pct = [x * 100 for x in matches]
+            steps = list(range(len(match_pct)))  # FIX: generate steps for this data
+            self.axes[1, 0].plot(steps, match_pct)
             self.axes[1, 0].set_title('Expert Match Rate')
             self.axes[1, 0].set_xlabel('Updates')
             self.axes[1, 0].set_ylabel('Match Rate (%)')
@@ -256,8 +261,9 @@ class TrainingMonitor:
         
         # BC Loss
         if self.metrics_history['bc_loss']:
-            self.axes[1, 1].plot(steps[:len(self.metrics_history['bc_loss'])], 
-                                list(self.metrics_history['bc_loss']))
+            bc_losses = list(self.metrics_history['bc_loss'])
+            steps = list(range(len(bc_losses)))  # FIX: generate steps for this data
+            self.axes[1, 1].plot(steps, bc_losses)
             self.axes[1, 1].set_title('BC Loss')
             self.axes[1, 1].set_xlabel('Updates')
             self.axes[1, 1].set_ylabel('Loss')
